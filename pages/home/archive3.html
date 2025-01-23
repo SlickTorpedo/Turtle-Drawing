@@ -1,0 +1,287 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drawing Program</title>
+  <style>
+    body { display: flex; margin: 0; font-family: Arial, sans-serif; height: 100vh; }
+    .sidebar { width: 200px; background-color: #f4f4f4; padding: 10px; overflow-y: auto; }
+    .shape { padding: 10px; margin: 10px 0; background-color: #fff; border: 1px solid #ccc; cursor: pointer; text-align: center; }
+    .button { padding: 10px; margin: 10px 0; background-color: #007bff; color: #fff; border: none; cursor: pointer; text-align: center; }
+    .canvas { flex: 1; background-color: #fff; border: 1px solid #ccc; position: relative; overflow: hidden; }
+    .grid-dot { width: 5px; height: 5px; background-color: #ccc; position: absolute; border-radius: 50%; }
+    .selected { border: 2px dashed #000; }
+    .info { position: absolute; bottom: 10px; right: 10px; background-color: rgba(255,255,255,0.8); padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; }
+    .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); padding-top: 60px; }
+    .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 80%; }
+    .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+    .close:hover, .close:focus { color: black; text-decoration: none; cursor: pointer; }
+    .canvas-shape { position: absolute; }
+    .rectangle { background-color: red; }
+    .circle { background-color: blue; border-radius: 50%; }
+    .triangle { width: 0; height: 0; border-left: 25px solid transparent; border-right: 25px solid transparent; border-bottom: 50px solid; }
+    .line { background-color: black; height: 2px; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="shape" data-shape="rectangle">Rectangle</div>
+    <div class="shape" data-shape="circle">Circle</div>
+    <div class="shape" data-shape="triangle">Triangle</div>
+    <div class="shape" data-shape="line">Line</div>
+    <input type="color" id="colorPicker" value="#ff0000">
+    <button class="button" id="exportButton">Export Code</button>
+  </div>
+  <div class="canvas" id="canvas">
+    <div class="info" id="info">
+      <p>Selected Shape: None</p>
+      <p>Color: N/A</p>
+      <p>Angle: N/A</p>
+      <p>Thickness: N/A</p>
+      <p>Size: N/A</p>
+    </div>
+  </div>
+  <div id="exportModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <textarea id="exportTextArea" rows="10" style="width: 100%;"></textarea>
+    </div>
+  </div>
+  <script>
+    let selectedShape = null;
+    let shapeSize = 50;
+    let shapeAngle = 0;
+    let lineThickness = 2;
+    let selectedElement = null;
+    let previousShape = null;
+    const undoStack = [];
+    const redoStack = [];
+
+    document.querySelectorAll('.shape').forEach(shape => {
+      shape.addEventListener('click', () => {
+        selectedShape = shape.getAttribute('data-shape');
+      });
+    });
+
+    const canvas = document.getElementById('canvas');
+    canvas.addEventListener('mousemove', (e) => {
+      if (!selectedShape) {
+        if (previousShape) {
+          previousShape.remove();
+          previousShape = null;
+        }
+        return;
+      }
+      if (previousShape) {
+        previousShape.remove();
+      }
+      const canvasRect = canvas.getBoundingClientRect();
+      const x = e.clientX - canvasRect.left;
+      const y = e.clientY - canvasRect.top;
+      const snappedX = Math.round(x / 10) * 10;
+      const snappedY = Math.round(y / 10) * 10;
+
+      let offsetX = shapeSize / 2;
+      let offsetY = shapeSize / 2;
+      if (selectedShape === 'line') {
+        offsetY = lineThickness / 2;
+      } else if (selectedShape === 'triangle') {
+        offsetX = shapeSize / 2;
+        offsetY = shapeSize;
+      }
+
+      const shapeLeft = snappedX - offsetX;
+      const shapeTop = snappedY - offsetY;
+      const shapeElement = document.createElement('div');
+      shapeElement.classList.add('canvas-shape', selectedShape);
+      shapeElement.dataset.x = shapeLeft;
+      shapeElement.dataset.y = shapeTop;
+      shapeElement.style.left = shapeLeft + 'px';
+      shapeElement.style.top = shapeTop + 'px';
+
+      if (selectedShape === 'line') {
+        shapeElement.style.width = shapeSize + 'px';
+        shapeElement.style.height = lineThickness + 'px';
+      } else if (selectedShape === 'triangle') {
+        shapeElement.style.width = '0';
+        shapeElement.style.height = '0';
+        shapeElement.style.borderLeft = (shapeSize / 2) + 'px solid transparent';
+        shapeElement.style.borderRight = (shapeSize / 2) + 'px solid transparent';
+        shapeElement.style.borderBottom = shapeSize + 'px solid ' + document.getElementById('colorPicker').value;
+        shapeElement.style.backgroundColor = 'transparent';
+      } else {
+        shapeElement.style.width = shapeSize + 'px';
+        shapeElement.style.height = shapeSize + 'px';
+        shapeElement.style.backgroundColor = document.getElementById('colorPicker').value;
+      }
+      shapeElement.style.transform = 'rotate(' + shapeAngle + 'deg)';
+      canvas.appendChild(shapeElement);
+      previousShape = shapeElement;
+    });
+
+    canvas.addEventListener('click', (e) => {
+      if (e.target.classList.contains('canvas-shape')) {
+        if (selectedElement) selectedElement.classList.remove('selected');
+        selectedElement = e.target;
+        selectedElement.classList.add('selected');
+        updateInfo(selectedElement);
+      } else {
+        // User clicked on the canvas (not on a shape)
+        if (previousShape) {
+          // Finalize the shape
+          undoStack.push(previousShape);
+          previousShape = null;
+          // Stop drawing
+          selectedShape = null;
+        }
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        redo();
+      } else if (e.key === '+' || e.key === '=') {
+        shapeSize += 10;
+      } else if (e.key === '-' || e.key === '_') {
+        shapeSize = Math.max(10, shapeSize - 10);
+      } else if (e.key === 'ArrowLeft') {
+        shapeAngle -= 5;
+      } else if (e.key === 'ArrowRight') {
+        shapeAngle += 5;
+      } else if (e.key === 'ArrowUp') {
+        if (selectedShape === 'line') lineThickness += 1;
+      } else if (e.key === 'ArrowDown') {
+        if (selectedShape === 'line') lineThickness = Math.max(1, lineThickness - 1);
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selectedElement) {
+          selectedElement.remove();
+          selectedElement = null;
+          updateInfo(null);
+        }
+      }
+    });
+
+    function updateInfo(element) {
+      const info = document.getElementById('info');
+      if (element) {
+        const color = element.style.backgroundColor || element.style.borderBottomColor;
+        const transformMatch = element.style.transform.match(/rotate\(([-\d]+)deg\)/);
+        const angle = transformMatch ? transformMatch[1] : 0;
+        const thickness = element.style.height;
+        const size = element.style.width;
+        info.innerHTML = `
+          <p>Selected Shape: ${element.classList[1]}</p>
+          <p>Color: ${color}</p>
+          <p>Angle: ${angle} degrees</p>
+          <p>Thickness: ${thickness}</p>
+          <p>Size: ${size}</p>
+        `;
+      } else {
+        info.innerHTML = `
+          <p>Selected Shape: None</p>
+          <p>Color: N/A</p>
+          <p>Angle: N/A</p>
+          <p>Thickness: N/A</p>
+          <p>Size: N/A</p>
+        `;
+      }
+    }
+
+    function undo() {
+      if (undoStack.length > 0) {
+        const shapeElement = undoStack.pop();
+        redoStack.push(shapeElement);
+        shapeElement.remove();
+        updateInfo(null);
+      }
+    }
+    function redo() {
+      if (redoStack.length > 0) {
+        const shapeElement = redoStack.pop();
+        canvas.appendChild(shapeElement);
+        undoStack.push(shapeElement);
+        updateInfo(shapeElement);
+      }
+    }
+
+    // Create grid
+    const canvasWidth = canvas.offsetWidth;
+    const canvasHeight = canvas.offsetHeight;
+    for (let x = 0; x < canvasWidth; x += 10) {
+      for (let y = 0; y < canvasHeight; y += 10) {
+        const dot = document.createElement('div');
+        dot.classList.add('grid-dot');
+        dot.style.left = x + 'px';
+        dot.style.top = y + 'px';
+        canvas.appendChild(dot);
+      }
+    }
+
+    // Export logic
+    const modal = document.getElementById("exportModal");
+    const btn = document.getElementById("exportButton");
+    const span = document.getElementsByClassName("close")[0];
+
+    btn.onclick = function() {
+      const shapes = document.querySelectorAll('.canvas-shape');
+      let code = "import turtle\nimport math\nturtle.colormode(255)\n\n";
+      shapes.forEach(shape => {
+        const shapeType = shape.classList[1];
+        const x = parseInt(shape.dataset.x) || 0;
+        const y = parseInt(shape.dataset.y) || 0;
+        const transformMatch = shape.style.transform.match(/rotate\\(([-\\d]+)deg\\)/);
+        const angle = transformMatch ? parseInt(transformMatch[1]) : 0;
+        let bg = shape.style.backgroundColor;
+        if (!bg || bg === 'transparent') {
+          bg = shape.style.borderBottomColor;
+        }
+        const rgbMatch = bg.match(/\\d+/g);
+        let r = 0, g = 0, b = 0;
+        if (rgbMatch) {
+          r = parseInt(rgbMatch[0]);
+          g = parseInt(rgbMatch[1]);
+          b = parseInt(rgbMatch[2]);
+        }
+        const width = parseInt(shape.style.width) || 0;
+        const height = parseInt(shape.style.height) || 0;
+
+        code += `turtle.penup()\n`;
+        code += `turtle.goto(${x}, -${y})\n`;
+        code += `turtle.setheading(0)\n`;
+        code += `turtle.pendown()\n`;
+        code += `turtle.color(${r},${g},${b})\n`;
+        code += `turtle.setheading(${angle})\n`;
+
+        if (shapeType === 'rectangle') {
+          code += `for _ in range(2):\n`;
+          code += `  turtle.forward(${width})\n`;
+          code += `  turtle.left(90)\n`;
+          code += `  turtle.forward(${height})\n`;
+          code += `  turtle.left(90)\n\n`;
+        } else if (shapeType === 'circle') {
+          let radius = Math.floor(width / 2);
+          code += `turtle.circle(${radius})\n\n`;
+        } else if (shapeType === 'line') {
+          let length = width || height;
+          code += `turtle.forward(${length})\n\n`;
+        } else if (shapeType === 'triangle') {
+          let side = parseInt(shape.style.borderBottomWidth) || 0;
+          code += `for _ in range(3):\n`;
+          code += `  turtle.forward(${side})\n`;
+          code += `  turtle.left(120)\n\n`;
+        }
+      });
+      code += "turtle.done()\n";
+      document.getElementById("exportTextArea").value = code;
+      modal.style.display = "block";
+    }
+    span.onclick = function() { modal.style.display = "none"; }
+    window.onclick = function(event) {
+      if (event.target == modal) {
+        modal.style.display = "none";
+      }
+    }
+  </script>
+</body>
+</html>

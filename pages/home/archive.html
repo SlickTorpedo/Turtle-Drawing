@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawing Program</title>
+    <style>
+        body {
+            display: flex;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 200px;
+            background-color: #f4f4f4;
+            padding: 10px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        
+        .shape {
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .button {
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            text-align: center;
+        }
+        
+        .canvas {
+            flex: 1;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .grid-dot {
+            width: 5px;
+            height: 5px;
+            background-color: #ccc;
+            position: absolute;
+            border-radius: 50%;
+        }
+
+        .selected {
+            border: 2px dashed #000;
+        }
+
+        .info {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+            padding-top: 60px;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="shape" data-shape="rectangle">Rectangle</div>
+        <div class="shape" data-shape="circle">Circle</div>
+        <div class="shape" data-shape="triangle">Triangle</div>
+        <div class="shape" data-shape="line">Line</div>
+        <input type="color" id="colorPicker" value="#ff0000">
+        <button class="button" id="exportButton">Export Code</button>
+    </div>
+    <div class="canvas" id="canvas">
+        <div class="info" id="info">
+            <p>Selected Shape: None</p>
+            <p>Color: N/A</p>
+            <p>Angle: N/A</p>
+            <p>Thickness: N/A</p>
+            <p>Size: N/A</p>
+        </div>
+    </div>
+
+    <!-- The Modal -->
+    <div id="exportModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <textarea id="exportTextArea" rows="10" style="width: 100%;"></textarea>
+        </div>
+    </div>
+
+    <script>
+        let selectedShape = null;
+        let draggingShape = null;
+        let shapeSize = 50;
+        let shapeAngle = 0;
+        let lineThickness = 2;
+        let selectedElement = null;
+        const undoStack = [];
+        const redoStack = [];
+
+        document.querySelectorAll('.shape').forEach(shape => {
+            shape.addEventListener('click', () => {
+                selectedShape = shape.getAttribute('data-shape');
+                if (draggingShape) {
+                    draggingShape.remove();
+                }
+                draggingShape = document.createElement('div');
+                draggingShape.classList.add('canvas-shape', selectedShape);
+                draggingShape.style.position = 'absolute';
+                draggingShape.style.pointerEvents = 'none';
+                draggingShape.style.backgroundColor = document.getElementById('colorPicker').value;
+                document.body.appendChild(draggingShape);
+                updateShapeSize();
+                updateShapeStyle();
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (draggingShape) {
+                draggingShape.style.left = `${e.clientX}px`;
+                draggingShape.style.top = `${e.clientY}px`;
+            }
+        });
+
+        document.getElementById('canvas').addEventListener('click', (e) => {
+            if (selectedShape) {
+                const canvasRect = canvas.getBoundingClientRect();
+                const x = e.clientX - canvasRect.left;
+                const y = e.clientY - canvasRect.top;
+                const snappedX = Math.round(x / 10) * 10;
+                const snappedY = Math.round(y / 10) * 10;
+
+                const shapeElement = document.createElement('div');
+                shapeElement.classList.add('canvas-shape', selectedShape);
+                shapeElement.style.left = `${snappedX}px`;
+                shapeElement.style.top = `${snappedY}px`;
+                shapeElement.style.width = `${shapeSize}px`;
+                shapeElement.style.height = selectedShape === 'line' ? `${lineThickness}px` : `${shapeSize}px`;
+                shapeElement.style.backgroundColor = document.getElementById('colorPicker').value;
+                shapeElement.style.transform = `rotate(${shapeAngle}deg)`;
+
+                if (selectedShape === 'triangle') {
+                    shapeElement.style.width = '0';
+                    shapeElement.style.height = '0';
+                    shapeElement.style.borderLeft = `${shapeSize / 2}px solid transparent`;
+                    shapeElement.style.borderRight = `${shapeSize / 2}px solid transparent`;
+                    shapeElement.style.borderBottom = `${shapeSize}px solid ${document.getElementById('colorPicker').value}`;
+                    shapeElement.style.backgroundColor = 'transparent';
+                }
+
+                canvas.appendChild(shapeElement);
+
+                undoStack.push(shapeElement);
+                redoStack.length = 0; // Clear the redo stack
+
+                draggingShape.remove();
+                draggingShape = null;
+                selectedShape = null;
+            } else if (e.target.classList.contains('canvas-shape')) {
+                if (selectedElement) {
+                    selectedElement.classList.remove('selected');
+                }
+                selectedElement = e.target;
+                selectedElement.classList.add('selected');
+                updateInfo(selectedElement);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                undo();
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                redo();
+            } else if (e.key === '+' || e.key === '=') {
+                shapeSize += 10;
+                updateShapeSize();
+            } else if (e.key === '-' || e.key === '_') {
+                shapeSize = Math.max(10, shapeSize - 10);
+                updateShapeSize();
+            } else if (e.key === 'ArrowLeft') {
+                shapeAngle -= 5;
+                updateShapeStyle();
+            } else if (e.key === 'ArrowRight') {
+                shapeAngle += 5;
+                updateShapeStyle();
+            } else if (e.key === 'ArrowUp') {
+                if (selectedShape === 'line') {
+                    lineThickness += 1;
+                    updateShapeSize();
+                }
+            } else if (e.key === 'ArrowDown') {
+                if (selectedShape === 'line') {
+                    lineThickness = Math.max(1, lineThickness - 1);
+                    updateShapeSize();
+                }
+            } else if (e.key === 'Backspace' || e.key === 'Delete') {
+                if (selectedElement) {
+                    selectedElement.remove();
+                    selectedElement = null;
+                    updateInfo(null);
+                }
+            }
+        });
+
+        function undo() {
+            if (undoStack.length > 0) {
+                const shapeElement = undoStack.pop();
+                redoStack.push(shapeElement);
+                shapeElement.remove();
+                updateInfo(null);
+            }
+        }
+
+        function redo() {
+            if (redoStack.length > 0) {
+                const shapeElement = redoStack.pop();
+                canvas.appendChild(shapeElement);
+                undoStack.push(shapeElement);
+                updateInfo(shapeElement);
+            }
+        }
+
+        function updateShapeSize() {
+            if (draggingShape) {
+                draggingShape.style.width = `${shapeSize}px`;
+                draggingShape.style.height = selectedShape === 'line' ? `${lineThickness}px` : `${shapeSize}px`;
+                if (selectedShape === 'triangle') {
+                    draggingShape.style.width = '0';
+                    draggingShape.style.height = '0';
+                    draggingShape.style.borderLeft = `${shapeSize / 2}px solid transparent`;
+                    draggingShape.style.borderRight = `${shapeSize / 2}px solid transparent`;
+                    draggingShape.style.borderBottom = `${shapeSize}px solid ${document.getElementById('colorPicker').value}`;
+                    draggingShape.style.backgroundColor = 'transparent';
+                }
+            }
+        }
+
+        function updateShapeStyle() {
+            if (draggingShape) {
+                draggingShape.style.backgroundColor = document.getElementById('colorPicker').value;
+                draggingShape.style.transform = `rotate(${shapeAngle}deg)`;
+                if (selectedShape === 'triangle') {
+                    draggingShape.style.borderBottomColor = document.getElementById('colorPicker').value;
+                }
+            }
+        }
+
+        function updateInfo(element) {
+            const info = document.getElementById('info');
+            if (element) {
+                const color = element.style.backgroundColor || element.style.borderBottomColor;
+                const angle = element.style.transform.replace(/[^0-9\-]/g, '') || 0;
+                const thickness = element.style.height;
+                const size = element.style.width;
+                info.innerHTML = `
+                    <p>Selected Shape: ${element.classList[1]}</p>
+                    <p>Color: ${color}</p>
+                    <p>Angle: ${angle} degrees</p>
+                    <p>Thickness: ${thickness}</p>
+                    <p>Size: ${size}</p>
+                `;
+            } else {
+                info.innerHTML = `
+                    <p>Selected Shape: None</p>
+                    <p>Color: N/A</p>
+                    <p>Angle: N/A</p>
+                    <p>Thickness: N/A</p>
+                    <p>Size: N/A</p>
+                `;
+            }
+        }
+
+        // Add styles for shapes on canvas
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .canvas-shape {
+                position: absolute;
+            }
+            .rectangle {
+                background-color: red;
+            }
+            .circle {
+                background-color: blue;
+                border-radius: 50%;
+            }
+            .triangle {
+                width: 0;
+                height: 0;
+                border-left: 25px solid transparent;
+                border-right: 25px solid transparent;
+                border-bottom: 50px solid;
+            }
+            .line {
+                background-color: black;
+                height: 2px;
+            }
+            .selected {
+                border: 2px dashed #000;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Add grid dots to the canvas
+        const canvas = document.getElementById('canvas');
+        const canvasWidth = canvas.offsetWidth;
+        const canvasHeight = canvas.offsetHeight;
+        for (let x = 0; x < canvasWidth; x += 10) {
+            for (let y = 0; y < canvasHeight; y += 10) {
+                const dot = document.createElement('div');
+                dot.classList.add('grid-dot');
+                dot.style.left = `${x}px`;
+                dot.style.top = `${y}px`;
+                canvas.appendChild(dot);
+            }
+        }
+
+        // Get the modal
+        const modal = document.getElementById("exportModal");
+
+        // Get the button that opens the modal
+        const btn = document.getElementById("exportButton");
+
+        // Get the <span> element that closes the modal
+        const span = document.getElementsByClassName("close")[0];
+
+        // When the user clicks the button, open the modal 
+        btn.onclick = function() {
+            modal.style.display = "block";
+        }
+
+        // When the user clicks on <span> (x), close the modal
+        span.onclick = function() {
+            modal.style.display = "none";
+        }
+
+        // When the user clicks anywhere outside of the modal, close it
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>
